@@ -1,8 +1,14 @@
 {
   "page_ranges": {
     "skip": [],
-    "content": [1, -1],
-    "endnotes": [-1, -1]
+    "content": [
+      1,
+      -1
+    ],
+    "endnotes": [
+      -1,
+      -1
+    ]
   },
   "exclude_regions": {
     "top": 0.05,
@@ -21,7 +27,13 @@
   },
   "footnote_processing": {
     "enabled": true,
-    "patterns": ["bracket", "paren", "spaced", "spaced_closer", "keyword"],
+    "patterns": [
+      "bracket",
+      "paren",
+      "spaced",
+      "spaced_closer",
+      "keyword"
+    ],
     "generate_backlinks": true
   },
   "metadata": {
@@ -36,5 +48,24 @@
     "max_height": 1600,
     "jpeg_quality": 85,
     "convert_png_to_jpeg": false
+  },
+  "chapter_detection": {
+    "use_running_headers": true,
+    "header_zone": 0.12,
+    "min_chapters": 2,
+    "max_chapters": 80
+  },
+  "table_extraction": {
+    "enabled": true,
+    "min_rows": 3,
+    "min_columns": 2,
+    "min_numeric_ratio": 0.35,
+    "column_gap": 4.0
+  },
+  "chart_extraction": {
+    "enabled": true,
+    "min_area_ratio": 0.1,
+    "max_text_density": 3.5,
+    "dpi": 150
   }
 }

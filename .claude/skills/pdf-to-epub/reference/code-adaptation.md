@@ -29,6 +29,7 @@ Only modify code when:
 | `detectors/table_detector.py` | Table geometry | Column/row heuristics for unusual layouts |
 | `detectors/table_renderer.py` | Table markup + CSS | Styling, colspan handling |
 | `detectors/chart_detector.py` | Chart regions | Chart-vs-table threshold, render DPI |
+| `detectors/running_header.py` | Chapters from running heads | Header band, division patterns |
 
 ---
 

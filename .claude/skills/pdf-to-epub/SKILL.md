@@ -74,8 +74,9 @@ doc = fitz.open("input.pdf")
 # 3. Multi-column layout (compare text block x-coordinates)
 # 4. Footnotes/endnotes (numbers in margins or at page bottom)
 # 5. Font sizes (for heading detection thresholds)
-# 6. Tables and charts (numeric grids; pages whose drawings form a plot)
-# 7. Page rotation — landscape pages are often portrait pages with /Rotate 90,
+# 6. Chapter titles — are they in the body, or only in the running header?
+# 7. Tables and charts (numeric grids; pages whose drawings form a plot)
+# 8. Page rotation — landscape pages are often portrait pages with /Rotate 90,
 #    and their text coordinates come back unrotated
 ```
 
@@ -164,6 +165,12 @@ Validation failed?
 │   │   → Try: multi_column.threshold: 0.3 (more sensitive)
 │   └─► Still failing? → See reference/troubleshooting.md#order
 │
+├─► Whole book in one chapter / empty table of contents?
+│   ├─► Chapter titles printed only in the running header?
+│   │   → Handled automatically; check the log for
+│   │     "Recovered N chapters from running headers"
+│   └─► See reference/chapter-detection.md
+│
 ├─► Headings not detected?
 │   ├─► Headings only slightly larger than body?
 │   │   → Try: heading_detection.font_size_threshold: 1.1
@@ -214,6 +221,7 @@ ConversionConfig:
 ├── page_ranges         # Which pages to process
 ├── exclude_regions     # Margins to ignore (headers/footers)
 ├── multi_column        # Column detection settings
+├── chapter_detection   # Chapter boundaries from running headers
 ├── table_extraction    # Table reconstruction (exhibit strategy)
 ├── chart_extraction    # Vector chart rasterization (exhibit strategy)
 ├── reading_order_strategy  # "y_sort" or "xy_cut"
@@ -267,6 +275,7 @@ See [reference/code-adaptation.md](reference/code-adaptation.md) for guidelines.
 │       ├── reading_order/
 │       ├── footnote_detector.py
 │       ├── endnote_formatter.py
+│       ├── running_header.py    # Chapters from running heads
 │       ├── table_detector.py    # Table reconstruction
 │       ├── table_renderer.py    # Table -> XHTML
 │       └── chart_detector.py    # Vector charts -> PNG figures
@@ -281,6 +290,7 @@ See [reference/code-adaptation.md](reference/code-adaptation.md) for guidelines.
 │   └── validate.py
 │
 ├── reference/                   # Documentation
+│   ├── chapter-detection.md
 │   ├── tables-and-charts.md
 │   ├── workflow.md
 │   ├── architecture.md
@@ -340,6 +350,7 @@ See [reference/code-adaptation.md](reference/code-adaptation.md) for guidelines.
 
 For detailed information, see:
 
+- [Chapter Detection](reference/chapter-detection.md) - Font headings and running headers
 - [Tables and Charts](reference/tables-and-charts.md) - The `exhibit` strategy
 - [Workflow Details](reference/workflow.md) - Complete phase-by-phase guide
 - [Architecture](reference/architecture.md) - Three-layer system explanation

@@ -14,11 +14,26 @@ from validation.text_canonicalizer import canonicalize
 
 logger = get_logger(__name__)
 
+# Running heads that name a division of the book. These repeat only across one
+# chapter's pages, so the global noise threshold never catches them, yet a
+# chapter title reprinted at the top of every page is plainly not body text.
+_CHAPTER_HEAD = re.compile(
+    r"^\s*(chapter|part|appendix|annex|section|book)\b.{0,90}$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 class PDFExtractor:
     """
     Handles PDF document reading and text extraction.
     Supports memory-efficient page iteration and automatic text canonicalization.
     """
+
+    # Fraction of page height treated as the header band.
+    HEADER_BAND = 0.12
+    # Pages a chapter running head must appear on before it counts as one.
+    CHAPTER_HEAD_MIN_PAGES = 3
+
     
     def __init__(self, file_path: Path):
         self.file_path = Path(file_path)
@@ -27,6 +42,9 @@ class PDFExtractor:
         
         self.doc: Optional[fitz.Document] = None
         self.noise_patterns: List[str] = []
+        # Applied only inside the header band, so a chapter title mentioned in
+        # the body ("see Chapter 5 - The Development Triangle") is preserved.
+        self.header_patterns: List[str] = []
         self.body_font_size: Optional[float] = None
 
     def __enter__(self):
@@ -65,11 +83,18 @@ class PDFExtractor:
 
         line_counts = Counter()
         font_size_counts = Counter()
-        # Sample up to 100 pages for better statistics
-        sample_pages = self.doc[:100]
-        
-        for page in sample_pages:
+        chapter_head_counts = Counter()
+        # Sample up to 100 pages for the general statistics. Chapter heads are
+        # counted across the whole book: a head belonging to a late chapter
+        # appears nowhere in the first hundred pages.
+        sample_size = 100
+        sample_pages = self.doc[:sample_size]
+
+        for page_index, page in enumerate(self.doc):
+            in_sample = page_index < sample_size
             page_dict = page.get_text("dict")
+            rotation_matrix = page.rotation_matrix
+            header_limit = page.rect.height * self.HEADER_BAND
             seen_on_page = set()
             for b in page_dict.get("blocks", []):
                 if b.get("type") != 0:
@@ -78,6 +103,17 @@ class PDFExtractor:
                     spans = line.get("spans", [])
                     line_text = "".join(span.get("text", "") for span in spans).strip()
                     if not line_text:
+                        continue
+
+                    # A running head naming one chapter repeats on that
+                    # chapter's pages only, which is too small a share of a
+                    # long book to look like noise globally. Count those
+                    # separately so they can still be stripped.
+                    line_box = fitz.Rect(line.get("bbox", (0, 0, 0, 0))) * rotation_matrix
+                    if line_box.y1 <= header_limit and _CHAPTER_HEAD.match(line_text):
+                        chapter_head_counts[line_text] += 1
+
+                    if not in_sample:
                         continue
                     for span in spans:
                         span_text = span.get("text", "")
@@ -101,11 +137,23 @@ class PDFExtractor:
             for p, count in line_counts.items() if count >= threshold
         ]
 
+        # Chapter running heads need far less support: three pages carrying
+        # the same "Chapter N - Title" at the very top is already a running
+        # head, not prose that happens to repeat.
+        self.header_patterns = [
+            re.compile(re.escape(text))
+            for text, count in chapter_head_counts.items()
+            if count >= self.CHAPTER_HEAD_MIN_PAGES
+        ]
+
         if font_size_counts:
             self.body_font_size = font_size_counts.most_common(1)[0][0]
         
-        if self.noise_patterns:
-            logger.info(f"Identified {len(self.noise_patterns)} noise patterns in {self.file_path.name}")
+        if self.noise_patterns or self.header_patterns:
+            logger.info(
+                f"Identified {len(self.noise_patterns)} noise patterns and "
+                f"{len(self.header_patterns)} running heads in {self.file_path.name}"
+            )
 
     def _extract_page_content(self, page: fitz.Page) -> str:
         """
@@ -142,6 +190,9 @@ class PDFExtractor:
                 cleaned_line = line_text
                 for pattern in self.noise_patterns:
                     cleaned_line = re.sub(pattern, "", cleaned_line)
+                if y1 <= page_height * self.HEADER_BAND:
+                    for pattern in self.header_patterns:
+                        cleaned_line = re.sub(pattern, "", cleaned_line)
                 
                 final_line = cleaned_line.strip()
                 if final_line:
@@ -240,6 +291,9 @@ class PDFExtractor:
 
                 for pattern in self.noise_patterns:
                     block_text = pattern.sub("", block_text)
+                if y0 <= page_height * self.HEADER_BAND:
+                    for pattern in self.header_patterns:
+                        block_text = pattern.sub("", block_text)
                 block_text = canonicalize(block_text)
                 if not block_text.strip():
                     continue

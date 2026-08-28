@@ -46,6 +46,18 @@ class FootnoteConfig:
 
 
 @dataclass
+class ChapterDetectionConfig:
+    """Chapter boundary detection configuration."""
+    # Many technical books print the chapter title only in the running head.
+    # Recovering chapters from those heads is what keeps such a book from
+    # converting into one enormous, unnavigable file.
+    use_running_headers: bool = True
+    header_zone: float = 0.12
+    min_chapters: int = 2
+    max_chapters: int = 80
+
+
+@dataclass
 class TableExtractionConfig:
     """Table reconstruction configuration."""
     enabled: bool = True
@@ -357,6 +369,7 @@ class ConversionConfig:
     footnote_processing: FootnoteConfig
     metadata: BookMetadata
     image_optimization: ImageOptimizationConfig = field(default_factory=ImageOptimizationConfig)
+    chapter_detection: ChapterDetectionConfig = field(default_factory=ChapterDetectionConfig)
     table_extraction: TableExtractionConfig = field(default_factory=TableExtractionConfig)
     chart_extraction: ChartExtractionConfig = field(default_factory=ChartExtractionConfig)
 
@@ -386,6 +399,8 @@ class ConversionConfig:
         data['metadata'] = BookMetadata.from_dict(data['metadata'])
         if 'image_optimization' in data:
             data['image_optimization'] = ImageOptimizationConfig(**data['image_optimization'])
+        if 'chapter_detection' in data:
+            data['chapter_detection'] = ChapterDetectionConfig(**data['chapter_detection'])
         if 'table_extraction' in data:
             data['table_extraction'] = TableExtractionConfig(**data['table_extraction'])
         if 'chart_extraction' in data:
@@ -401,6 +416,7 @@ __all__ = [
     'HeadingConfig',
     'FootnoteConfig',
     'ImageOptimizationConfig',
+    'ChapterDetectionConfig',
     'TableExtractionConfig',
     'ChartExtractionConfig',
     'BookMetadata',

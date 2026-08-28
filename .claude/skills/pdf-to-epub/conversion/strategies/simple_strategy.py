@@ -24,6 +24,11 @@ from conversion.detectors.structure_classifier import StructureClassifier
 from conversion.detectors.structure_builder import StructureBuilder
 from conversion.detectors.footnote_detector import FootnoteDetector
 from conversion.detectors.endnote_formatter import EndnoteFormatter
+from conversion.detectors.models import SemanticBlock
+from conversion.detectors.running_header import RunningHeaderDetector
+from core.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class SimpleStrategy(BaseStrategy):
@@ -61,8 +66,33 @@ class SimpleStrategy(BaseStrategy):
         # Step 4: Extract metadata from PDF
         metadata = self._extract_metadata(pdf_path, config)
 
+        # Step 5: Recover chapter boundaries from the running headers. The
+        # extractor has already stripped the heads out of the text; this reads
+        # them straight from the PDF to learn where the chapters begin.
+        self._chapter_starts = self._detect_chapter_starts(pdf_path, config)
+
         return blocks, images, metadata
-    
+
+    def _detect_chapter_starts(self, pdf_path: Path, config) -> Dict[int, str]:
+        """Map chapter start pages to titles, or {} if none can be recovered."""
+        chapter_config = getattr(config, "chapter_detection", None)
+        if chapter_config is not None and not chapter_config.use_running_headers:
+            return {}
+
+        detector = RunningHeaderDetector(
+            header_zone=getattr(chapter_config, "header_zone", 0.12),
+            min_chapters=getattr(chapter_config, "min_chapters", 2),
+            max_chapters=getattr(chapter_config, "max_chapters", 80),
+        )
+        doc = fitz.open(str(pdf_path))
+        try:
+            return RunningHeaderDetector.chapter_starts(detector.detect(doc))
+        except Exception as exc:
+            logger.warning(f"Running-header chapter detection failed: {exc}")
+            return {}
+        finally:
+            doc.close()
+
     def _extract_images(self, pdf_path: Path) -> List[ImageResource]:
         """
         Extract all images from PDF pages.
@@ -327,7 +357,10 @@ class SimpleStrategy(BaseStrategy):
         # Step 2: Classify each block as heading or paragraph
         classifier = StructureClassifier()
         classified_blocks = classifier.classify(blocks)
-        
+
+        # Step 2b: Impose chapter starts recovered from running headers
+        classified_blocks = self._apply_running_header_chapters(classified_blocks)
+
         # Step 3: Group into chapters
         builder = StructureBuilder()
         chapters = builder.build_chapters(classified_blocks)
@@ -355,6 +388,55 @@ class SimpleStrategy(BaseStrategy):
         structured.rendered_chapters = self._render_chapters_with_images(chapters, images, config)
         
         return structured
+
+    def _apply_running_header_chapters(self, classified: List) -> List:
+        """
+        Insert a heading at each recovered chapter start.
+
+        Existing top-level headings are demoted to h2. When the running heads
+        tell us where the chapters are, letting a stray large-font block on
+        the title page also open a chapter would produce a table of contents
+        listing things like "* * * * *" alongside the real chapters.
+        """
+        starts = getattr(self, "_chapter_starts", None)
+        if not starts:
+            return classified
+
+        pending = sorted(starts.items())
+        index = 0
+        result: List = []
+
+        for block in classified:
+            page = block.original_block.page
+            while index < len(pending) and page >= pending[index][0]:
+                start_page, title = pending[index]
+                result.append(self._chapter_heading(title, start_page))
+                index += 1
+            if block.role == "h1":
+                block.role = "h2"
+            result.append(block)
+
+        while index < len(pending):
+            start_page, title = pending[index]
+            result.append(self._chapter_heading(title, start_page))
+            index += 1
+
+        return result
+
+    @staticmethod
+    def _chapter_heading(title: str, page: int) -> SemanticBlock:
+        """A synthetic h1 marking a chapter start."""
+        # y0 below zero keeps it ahead of everything else on its page when the
+        # renderer sorts blocks and figures back into position.
+        block = TextBlock(
+            text=title,
+            page=page,
+            x0=0.0, y0=-1.0, x1=0.0, y1=-1.0,
+            font_name="ChapterHeading",
+            font_size=16.0,
+            flags=16,
+        )
+        return SemanticBlock(original_block=block, role="h1")
 
     def _render_chapters_with_images(
         self,

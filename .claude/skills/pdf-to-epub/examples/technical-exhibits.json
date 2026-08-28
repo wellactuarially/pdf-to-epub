@@ -29,5 +29,11 @@
     "min_area_ratio": 0.1,
     "max_text_density": 3.5,
     "dpi": 150
+  },
+  "chapter_detection": {
+    "use_running_headers": true,
+    "header_zone": 0.12,
+    "min_chapters": 2,
+    "max_chapters": 80
   }
 }
