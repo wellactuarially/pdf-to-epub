@@ -1,0 +1,40 @@
+{
+  "page_ranges": {
+    "skip": [],
+    "content": [1, -1],
+    "endnotes": [-1, -1]
+  },
+  "exclude_regions": {
+    "top": 0.05,
+    "bottom": 0.05,
+    "left": 0.0,
+    "right": 0.0
+  },
+  "multi_column": {
+    "enabled": false,
+    "column_count": 1,
+    "threshold": 0.4
+  },
+  "reading_order_strategy": "y_sort",
+  "heading_detection": {
+    "font_size_threshold": 1.05
+  },
+  "footnote_processing": {
+    "enabled": true,
+    "patterns": ["bracket", "paren", "spaced", "spaced_closer", "keyword"],
+    "generate_backlinks": true
+  },
+  "metadata": {
+    "title": "Estimating Unpaid Claims Using Basic Techniques",
+    "author": "Jacqueline Friedland, FCAS, FCIA, MAAA, FCA",
+    "language": "en",
+    "publisher": "Casualty Actuarial Society"
+  },
+  "image_optimization": {
+    "enabled": true,
+    "max_width": 1200,
+    "max_height": 1600,
+    "jpeg_quality": 85,
+    "convert_png_to_jpeg": false
+  }
+}
