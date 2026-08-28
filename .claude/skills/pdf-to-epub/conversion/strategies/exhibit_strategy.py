@@ -67,6 +67,10 @@ class ExhibitStrategy(SimpleStrategy):
 
         table_config = getattr(config, "table_extraction", None)
         chart_config = getattr(config, "chart_extraction", None)
+        self.renderer = TableRenderer(
+            width_budget=getattr(table_config, "table_width_budget", 105),
+            max_columns=getattr(table_config, "max_columns_per_part", 12),
+        )
         tables_enabled = getattr(table_config, "enabled", True)
         charts_enabled = getattr(chart_config, "enabled", True)
 

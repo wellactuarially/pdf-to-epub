@@ -252,6 +252,20 @@ class StructureBuilder:
         if total_starts < 5 or len(pages_with_starts) < 2:
             return set()
 
+        # A dedicated endnotes section holds most of the book's notes. When the
+        # run found at the back accounts for only a fraction of them, the book
+        # instead prints footnotes at the bottom of pages throughout, and
+        # treating the tail as "the endnotes" would silently drop the rest.
+        # Returning nothing hands over to the caller's collect-them-all path.
+        all_starts = sum(starts_by_page.values())
+        if all_starts and total_starts < all_starts * 0.6:
+            logger.info(
+                f"Endnote starts are spread through the book "
+                f"({total_starts} of {all_starts} in the tail run); "
+                "treating them as per-page footnotes"
+            )
+            return set()
+
         logger.info(
             f"Inferred endnotes section on pages {min(pages)}-{max(pages)} "
             f"({total_starts} note starts across {len(pages_with_starts)} pages)"

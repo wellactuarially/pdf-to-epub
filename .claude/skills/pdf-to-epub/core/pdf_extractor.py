@@ -4,6 +4,8 @@ Integrates with text_canonicalizer for clean output.
 """
 
 import re
+import statistics
+
 import fitz
 from pathlib import Path
 from collections import Counter
@@ -170,38 +172,32 @@ class PDFExtractor:
             key=lambda b: self._visual_key(b.get("bbox", (0, 0, 0, 0)), rotation_matrix)
         )
 
+        # Segment into paragraphs exactly as get_structural_blocks does. The two
+        # must agree: this text is the reference the conversion is validated
+        # against, and if one side groups by block while the other groups by
+        # paragraph, every comparison near a boundary reads as a mismatch.
         page_text = []
         for b in ordered_blocks:
-            lines = b.get("lines", [])
-            clean_lines = []
-            for line in lines:
-                spans = line.get("spans", [])
-                line_text = "".join(span.get("text", "") for span in spans).strip()
-                if not line_text:
+            for group in self._paragraph_groups(b, rotation_matrix):
+                block_text = group["text"]
+                if not block_text.strip():
                     continue
-                max_size = max((span.get("size", 0.0) for span in spans), default=0.0)
-                line_box = fitz.Rect(line.get("bbox", (0, 0, 0, 0))) * rotation_matrix
-                y0, y1 = line_box.y0, line_box.y1
-                if self._is_header_footer_line(line_text, y0, y1, page_height, max_size):
+
+                if self._is_header_footer_line(
+                    block_text, group["y0"], group["y1"], page_height, group["font"][1]
+                ):
                     continue
-                    
-                # Remove any noise patterns found WITHIN the line
-                import re
-                cleaned_line = line_text
+
                 for pattern in self.noise_patterns:
-                    cleaned_line = re.sub(pattern, "", cleaned_line)
-                if y1 <= page_height * self.HEADER_BAND:
+                    block_text = pattern.sub("", block_text)
+                if group["y0"] <= page_height * self.HEADER_BAND:
                     for pattern in self.header_patterns:
-                        cleaned_line = re.sub(pattern, "", cleaned_line)
-                
-                final_line = cleaned_line.strip()
-                if final_line:
-                    clean_lines.append(final_line)
-            
-            block_text = " ".join(clean_lines)
-            if block_text:
-                page_text.append(block_text)
-        
+                        block_text = pattern.sub("", block_text)
+
+                block_text = block_text.strip()
+                if block_text:
+                    page_text.append(block_text)
+
         raw_text = "\n\n".join(page_text)
         return canonicalize(raw_text)
 
@@ -251,64 +247,211 @@ class PDFExtractor:
             for b in blocks:
                 if b["type"] != 0: # 0 = Text, 1 = Image
                     continue
-                    
-                block_text = ""
-                # We need to determine the dominant font properties for the block
-                # Strategy: Take the font of the longest span
-                font_counts = Counter()
-                flag_counts = Counter()
-                
-                # Coordinates (in the page's visual, rotation-applied space)
-                bbox = fitz.Rect(b["bbox"]) * rotation_matrix
-                x0, y0, x1, y1 = bbox.x0, bbox.y0, bbox.x1, bbox.y1
-                
-                for line in b["lines"]:
-                    for span in line["spans"]:
-                        text = span["text"]
-                        if not text.strip():
-                            continue
-                        
-                        block_text += text + " "
-                        
-                        # Weight by length
-                        weight = len(text)
-                        font_key = (span["font"], span["size"])
-                        font_counts[font_key] += weight
-                        flag_counts[span["flags"]] += weight
-                
-                if not block_text.strip():
-                    continue
-                    
-                # Find dominant font
-                if font_counts:
-                    dom_font, dom_size = font_counts.most_common(1)[0][0]
-                    dom_flags = flag_counts.most_common(1)[0][0]
-                else:
-                    dom_font, dom_size, dom_flags = "Unknown", 0.0, 0
 
-                if self._is_header_footer_line(block_text, y0, y1, page_height, dom_size):
-                    continue
+                # A PyMuPDF block is a region of the page, not a paragraph: on a
+                # prose page it routinely covers the whole text area, headings
+                # included. Emitting one TextBlock per block would give every
+                # downstream stage a single unit spanning a dozen paragraphs and
+                # several headings, which is why long chapters used to render as
+                # one enormous <p>. Split it first.
+                for group in self._paragraph_groups(b, rotation_matrix):
+                    block_text = group["text"]
+                    x0, y0, x1, y1 = group["x0"], group["y0"], group["x1"], group["y1"]
+                    dom_font, dom_size = group["font"]
+                    dom_flags = group["flags"]
 
-                for pattern in self.noise_patterns:
-                    block_text = pattern.sub("", block_text)
-                if y0 <= page_height * self.HEADER_BAND:
-                    for pattern in self.header_patterns:
+                    if self._is_header_footer_line(block_text, y0, y1, page_height, dom_size):
+                        continue
+
+                    for pattern in self.noise_patterns:
                         block_text = pattern.sub("", block_text)
-                block_text = canonicalize(block_text)
-                if not block_text.strip():
-                    continue
-                    
-                text_block = TextBlock(
-                    text=block_text.strip(),
-                    page=page_num + 1, # 1-based indexing for humans
-                    x0=x0, y0=y0, x1=x1, y1=y1,
-                    font_name=dom_font,
-                    font_size=dom_size,
-                    flags=dom_flags
-                )
-                all_blocks.append(text_block)
+                    if y0 <= page_height * self.HEADER_BAND:
+                        for pattern in self.header_patterns:
+                            block_text = pattern.sub("", block_text)
+                    block_text = canonicalize(block_text)
+                    if not block_text.strip():
+                        continue
+
+                    text_block = TextBlock(
+                        text=block_text.strip(),
+                        page=page_num + 1, # 1-based indexing for humans
+                        x0=x0, y0=y0, x1=x1, y1=y1,
+                        font_name=dom_font,
+                        font_size=dom_size,
+                        flags=dom_flags
+                    )
+                    all_blocks.append(text_block)
                 
         return all_blocks
+
+    # A line starting this much further down than the usual line pitch begins a
+    # new paragraph rather than continuing the current one.
+    PARAGRAPH_PITCH_FACTOR = 1.5
+    # A first line indented by more than this many times the font size begins a
+    # new paragraph, for documents that indent instead of leaving a blank line.
+    PARAGRAPH_INDENT_FACTOR = 1.2
+
+    def _paragraph_groups(self, block: dict, rotation_matrix) -> List[Dict[str, Any]]:
+        """
+        Split one PyMuPDF block into paragraph-sized groups of lines.
+
+        A group ends at a blank line, at a change of type style, at an
+        unusually large step down the page, or at an indented first line —
+        the four ways a document signals "new paragraph". Splitting on type
+        style is what lifts a heading out of the surrounding prose: it is
+        set in a different size or weight, so it becomes its own group and
+        the classifier can recognise it.
+
+        Returns:
+            One dict per paragraph with its text, visual bbox, dominant font
+            and dominant flags.
+        """
+        lines = []
+        for line in block.get("lines", []):
+            rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0))) * rotation_matrix
+            spans = [s for s in line.get("spans", []) if s.get("text", "").strip()]
+            if not spans:
+                lines.append({"blank": True, "rect": rect})
+                continue
+
+            fonts: Counter = Counter()
+            flags: Counter = Counter()
+            for span in spans:
+                weight = len(span.get("text", ""))
+                fonts[(span.get("font", "Unknown"), span.get("size", 0.0))] += weight
+                flags[span.get("flags", 0)] += weight
+
+            dominant_size = fonts.most_common(1)[0][0][1]
+            lines.append({
+                "blank": False,
+                "rect": rect,
+                "text": self._join_spans(spans, dominant_size),
+                "fonts": fonts,
+                "flags": flags,
+                "font": fonts.most_common(1)[0][0],
+                "flag": flags.most_common(1)[0][0],
+            })
+
+        content = [line for line in lines if not line["blank"]]
+        if not content:
+            return []
+
+        pitch = self._median_pitch(content)
+
+        groups: List[List[dict]] = []
+        current: List[dict] = []
+        previous = None
+
+        for line in lines:
+            if line["blank"]:
+                if current:
+                    groups.append(current)
+                current, previous = [], None
+                continue
+
+            if current and previous is not None and self._starts_paragraph(line, previous, current, pitch):
+                groups.append(current)
+                current = []
+
+            current.append(line)
+            previous = line
+
+        if current:
+            groups.append(current)
+
+        return [self._as_group(g) for g in groups if g]
+
+    @staticmethod
+    def _join_spans(spans: List[dict], dominant_size: float) -> str:
+        """
+        Join a line's spans, setting superscript note numbers apart with spaces.
+
+        Footnote handling downstream keys on whitespace: a reference is spotted
+        as a number after punctuation and a space, and a note's own start as a
+        number followed by two spaces. In the PDF that separation is
+        typographic — the marker is a small raised span carrying no spaces at
+        all — so it is restored here.
+
+        The alternative, spacing every span, is what the upstream code did; it
+        also works, but it drops a stray space either side of every italic
+        phrase, which then makes the extracted page text disagree with the
+        block text and turns ordinary prose into fuzzy matches during
+        validation.
+        """
+        parts: List[str] = []
+        after_marker = False
+        for span in spans:
+            text = span.get("text", "")
+            marker = text.strip()
+            is_superscript = (
+                marker.isdigit()
+                and len(marker) <= 3
+                and span.get("size", 0.0) < dominant_size * 0.85
+            )
+            if is_superscript:
+                # One space before, two after: the two-space gap is what marks
+                # a note's own start, and it reads as a single gap either way.
+                parts.append(f" {marker}  ")
+                after_marker = True
+                continue
+
+            # The PDF may or may not put a space at the start of the text that
+            # follows a marker; normalise so the gap is always exactly two.
+            parts.append(text.lstrip() if after_marker else text)
+            after_marker = False
+
+        return "".join(parts).strip()
+
+    @staticmethod
+    def _median_pitch(content: List[dict]) -> float:
+        """Typical baseline-to-baseline step, used to spot paragraph breaks."""
+        steps = [
+            content[i + 1]["rect"].y0 - content[i]["rect"].y0
+            for i in range(len(content) - 1)
+        ]
+        steps = [s for s in steps if s > 0]
+        if steps:
+            return statistics.median(steps)
+        return max(content[0]["rect"].height, 1.0) * 1.25
+
+    def _starts_paragraph(self, line: dict, previous: dict, current: List[dict], pitch: float) -> bool:
+        size = max(line["font"][1], 1.0)
+
+        # A change of size or weight: a heading, or the note under a table.
+        same_size = abs(line["font"][1] - previous["font"][1]) < 0.4
+        same_weight = (line["flag"] & 16) == (previous["flag"] & 16)
+        if not (same_size and same_weight):
+            return True
+
+        if line["rect"].y0 - previous["rect"].y0 > pitch * self.PARAGRAPH_PITCH_FACTOR:
+            return True
+
+        left = min(item["rect"].x0 for item in current)
+        if line["rect"].x0 - left > size * self.PARAGRAPH_INDENT_FACTOR:
+            return True
+
+        return False
+
+    @staticmethod
+    def _as_group(lines: List[dict]) -> Dict[str, Any]:
+        fonts: Counter = Counter()
+        flags: Counter = Counter()
+        for line in lines:
+            fonts.update(line["fonts"])
+            flags.update(line["flags"])
+
+        return {
+            # One form for both consumers: the page text used as the validation
+            # reference and the block text used to build the EPUB must agree,
+            # or every comparison near a span boundary reads as a mismatch.
+            "text": " ".join(line["text"] for line in lines if line["text"]),
+            "x0": min(line["rect"].x0 for line in lines),
+            "y0": min(line["rect"].y0 for line in lines),
+            "x1": max(line["rect"].x1 for line in lines),
+            "y1": max(line["rect"].y1 for line in lines),
+            "font": fonts.most_common(1)[0][0] if fonts else ("Unknown", 0.0),
+            "flags": flags.most_common(1)[0][0] if flags else 0,
+        }
 
     @staticmethod
     def _visual_key(bbox, rotation_matrix):

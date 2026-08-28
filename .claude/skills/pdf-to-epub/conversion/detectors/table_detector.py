@@ -226,20 +226,29 @@ class TableDetector:
         ]
 
     @staticmethod
-    def _is_label_row(row: List[Tuple[float, float, str]]) -> bool:
+    def _looks_like_label_values(values: List[str]) -> bool:
         """
-        Numeric-looking rows that are really headers: the "(1) (2) (3)" column
-        keys, and the year captions sitting under a spanning group header.
-        Both are centred over their columns, so letting them vote on column
-        positions would split every column in two.
+        Numeric-looking values that are really headings: the "(1) (2) (3)"
+        column keys, and the year captions sitting under a spanning group
+        header.
         """
-        values = [token[2].strip() for token in row if token[2].strip()]
+        values = [value for value in values if value.strip()]
         if not values:
             return False
-        if all(re.fullmatch(r"\(\d{1,3}\)", value) for value in values):
+        if all(re.fullmatch(r"\(\d{1,3}\)", value.strip()) for value in values):
             return True
-        years = [v for v in values if re.fullmatch(r"(19|20)\d{2}", v)]
+        years = [v for v in values if re.fullmatch(r"(19|20)\d{2}", v.strip())]
         return len(years) >= max(2, len(values) - 2)
+
+    @classmethod
+    def _is_label_row(cls, row: List[Tuple[float, float, str]]) -> bool:
+        """
+        A heading row masquerading as data.
+
+        These are centred over their columns rather than aligned to them, so
+        letting them vote on column positions would split every column in two.
+        """
+        return cls._looks_like_label_values([token[2] for token in row])
 
     def _column_anchors(self, rows: List[List[Tuple[float, float, str]]]) -> List[float]:
         """
@@ -488,9 +497,17 @@ class TableDetector:
                 index += cell.colspan
         return cells
 
-    @staticmethod
-    def _count_header_rows(grid: List[List[Cell]]) -> int:
-        """Leading rows with no numeric data cells are headers."""
+    @classmethod
+    def _count_header_rows(cls, grid: List[List[Cell]]) -> int:
+        """
+        How many leading rows form the header.
+
+        A row of nothing but numbers is not automatically data: an exhibit's
+        header is routinely three rows deep — a spanning group title, a row of
+        year captions, then the "(1) (2) (3)" column keys. Treating the year
+        row as data leaves the columns unlabelled, which matters most when a
+        wide table is split and each part has to carry its own header.
+        """
         header_rows = 0
         for row in grid:
             values = [c for c in row if c.text.strip()]
@@ -498,9 +515,7 @@ class TableDetector:
                 header_rows += 1
                 continue
             numeric = sum(1 for c in values if c.numeric)
-            # A row of column numbers — "(1) (2) (3)" — is still a header.
-            all_markers = all(re.fullmatch(r"\(\d{1,3}\)", c.text.strip()) for c in values)
-            if numeric == 0 or all_markers:
+            if numeric == 0 or cls._looks_like_label_values([c.text for c in values]):
                 header_rows += 1
             else:
                 break

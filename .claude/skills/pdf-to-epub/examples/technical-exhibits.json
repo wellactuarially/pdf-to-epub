@@ -22,7 +22,9 @@
     "min_rows": 3,
     "min_columns": 2,
     "min_numeric_ratio": 0.35,
-    "column_gap": 4.0
+    "column_gap": 4.0,
+    "table_width_budget": 105,
+    "max_columns_per_part": 12
   },
   "chart_extraction": {
     "enabled": true,

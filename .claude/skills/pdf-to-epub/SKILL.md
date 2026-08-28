@@ -185,6 +185,13 @@ Validation failed?
 │   └─► Tune table_extraction.column_gap
 │       → See reference/tables-and-charts.md#troubleshooting
 │
+├─► Tables run off the page on an e-reader?
+│   └─► Lower table_extraction.table_width_budget
+│       → See reference/paragraphs-and-layout.md#wide-tables
+│
+├─► Whole chapter is one huge paragraph?
+│   └─► See reference/paragraphs-and-layout.md
+│
 ├─► Footnotes not linking?
 │   ├─► Non-standard format (not [1] or (1))?
 │   │   → Add pattern to FootnoteDetector.PATTERNS
@@ -222,7 +229,7 @@ ConversionConfig:
 ├── exclude_regions     # Margins to ignore (headers/footers)
 ├── multi_column        # Column detection settings
 ├── chapter_detection   # Chapter boundaries from running headers
-├── table_extraction    # Table reconstruction (exhibit strategy)
+├── table_extraction    # Table reconstruction + width-based splitting
 ├── chart_extraction    # Vector chart rasterization (exhibit strategy)
 ├── reading_order_strategy  # "y_sort" or "xy_cut"
 ├── heading_detection   # Font size thresholds
@@ -291,6 +298,7 @@ See [reference/code-adaptation.md](reference/code-adaptation.md) for guidelines.
 │
 ├── reference/                   # Documentation
 │   ├── chapter-detection.md
+│   ├── paragraphs-and-layout.md
 │   ├── tables-and-charts.md
 │   ├── workflow.md
 │   ├── architecture.md
@@ -351,6 +359,7 @@ See [reference/code-adaptation.md](reference/code-adaptation.md) for guidelines.
 For detailed information, see:
 
 - [Chapter Detection](reference/chapter-detection.md) - Font headings and running headers
+- [Paragraphs and Layout](reference/paragraphs-and-layout.md) - Paragraph splitting, wide tables
 - [Tables and Charts](reference/tables-and-charts.md) - The `exhibit` strategy
 - [Workflow Details](reference/workflow.md) - Complete phase-by-phase guide
 - [Architecture](reference/architecture.md) - Three-layer system explanation

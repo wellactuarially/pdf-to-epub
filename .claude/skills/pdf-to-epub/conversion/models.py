@@ -65,6 +65,13 @@ class TableExtractionConfig:
     min_columns: int = 2
     min_numeric_ratio: float = 0.35
     column_gap: float = 4.0
+    # Wide tables are split into column groups that each repeat the row
+    # labels, because e-ink readers do not scroll sideways and would otherwise
+    # clip the right-hand columns. Width is estimated in character units: the
+    # widest value per column plus padding. 105 is the measured fit for a
+    # 600pt-wide screen at the table font size.
+    table_width_budget: int = 105
+    max_columns_per_part: int = 12
 
 
 @dataclass
