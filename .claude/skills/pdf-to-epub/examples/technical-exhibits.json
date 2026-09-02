@@ -1,0 +1,41 @@
+{
+  "page_ranges": {
+    "skip": [],
+    "content": [
+      1,
+      -1
+    ]
+  },
+  "reading_order_strategy": "y_sort",
+  "multi_column": {
+    "enabled": false
+  },
+  "heading_detection": {
+    "font_size_threshold": 1.05
+  },
+  "footnote_processing": {
+    "enabled": true,
+    "generate_backlinks": true
+  },
+  "table_extraction": {
+    "enabled": true,
+    "min_rows": 3,
+    "min_columns": 2,
+    "min_numeric_ratio": 0.35,
+    "column_gap": 4.0,
+    "table_width_budget": 105,
+    "max_columns_per_part": 12
+  },
+  "chart_extraction": {
+    "enabled": true,
+    "min_area_ratio": 0.1,
+    "max_text_density": 3.5,
+    "dpi": 150
+  },
+  "chapter_detection": {
+    "use_running_headers": true,
+    "header_zone": 0.12,
+    "min_chapters": 2,
+    "max_chapters": 80
+  }
+}
